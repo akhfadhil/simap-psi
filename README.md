@@ -18,13 +18,13 @@ Template ini belum berisi aplikasi Laravel lengkap. Tahap awal ini hanya mengunc
 config/party.php
 app/Support/PartyConfig.php
 app/Services/PartyScopeService.php
+database/migrations/0001_01_01_000000_create_party_app_schema.php
 PARTY_PROJECT_OPERASIONAL.md
 ```
 
 ## Belum Masuk
 
 - Skeleton Laravel lengkap.
-- Migration fresh/squashed.
 - Controller, route, Blade, export, dashboard, dan test.
 - Import snapshot dari SIMAP utama.
 
