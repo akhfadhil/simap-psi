@@ -10,6 +10,7 @@ Tahap pertama baru mengekstrak fondasi kecil dari SIMAP Garuda:
 - helper pencocokan partai,
 - service scope wilayah,
 - migration fresh/squashed awal untuk schema inti partai,
+- model inti untuk wilayah, user, pemilu setting, rekap, suara, dan flag,
 - prinsip role final,
 - batasan fitur yang tidak boleh ikut template.
 
@@ -43,7 +44,7 @@ Nomor urut partai hanya metadata historis per pemilu, bukan identitas permanen.
 
 1. Copy skeleton Laravel dari SIMAP Garuda yang sudah dibersihkan.
 2. Review migration fresh/squashed terhadap kode runtime saat model mulai dipindahkan.
-3. Pindahkan model, controller, route, view, export, service, dan test secara bertahap.
+3. Pindahkan controller, route, view, export, service, factory/seeder, dan test secara bertahap.
 4. Hapus backward route legacy dari calon template.
 5. Pastikan semua label partai memakai `config('party.*')` atau `PartyConfig`.
 6. Jalankan test setelah setiap batch kecil.
@@ -68,3 +69,22 @@ Schema ini sengaja hanya membawa:
 - flag internal.
 
 Schema ini tidak membawa tabel dokumen, tabel non-legislatif, role legacy, atau migration cleanup dari SIMAP Garuda.
+
+## Model Inti
+
+Model inti yang sudah tersedia:
+
+- `Dapil`
+- `Kecamatan`
+- `Desa`
+- `Tps`
+- `User`
+- `PemiluSetting`
+- `RekapPartai`
+- `RekapCaleg`
+- `RekapHeader`
+- `RekapPartaiSuara`
+- `RekapCalegSuara`
+- `RekapCellFlag`
+
+Model ini hanya mencakup relasi dan helper yang dibutuhkan schema inti. Controller, policy, factory, seeder, dan test belum dipindahkan.

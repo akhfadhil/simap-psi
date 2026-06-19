@@ -18,6 +18,7 @@ Template ini belum berisi aplikasi Laravel lengkap. Tahap awal ini hanya mengunc
 config/party.php
 app/Support/PartyConfig.php
 app/Services/PartyScopeService.php
+app/Models/
 database/migrations/0001_01_01_000000_create_party_app_schema.php
 PARTY_PROJECT_OPERASIONAL.md
 ```
@@ -26,6 +27,7 @@ PARTY_PROJECT_OPERASIONAL.md
 
 - Skeleton Laravel lengkap.
 - Controller, route, Blade, export, dashboard, dan test.
+- Factories dan seeders.
 - Import snapshot dari SIMAP utama.
 
 ## Prinsip Ekstraksi
