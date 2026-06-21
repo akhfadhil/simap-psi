@@ -44,9 +44,10 @@ return new class extends Migration
         Schema::create('users', function (Blueprint $table) {
             $table->id();
             $table->string('username')->unique();
-            $table->enum('role', ['admin_partai', 'korcam', 'kordes', 'saksi_tps']);
+            $table->string('role');
             $table->string('name');
             $table->string('password');
+            $table->string('phone')->nullable();
             $table->foreignId('kecamatan_id')->nullable()->constrained('kecamatans')->nullOnDelete();
             $table->foreignId('desa_id')->nullable()->constrained('desas')->nullOnDelete();
             $table->foreignId('tps_id')->nullable()->constrained('tps')->nullOnDelete();
@@ -120,14 +121,14 @@ return new class extends Migration
 
         Schema::create('pemilu_settings', function (Blueprint $table) {
             $table->id();
-            $table->enum('jenis', ['dpr_ri', 'dprd_prov', 'dprd_kab'])->unique();
+            $table->string('jenis')->unique();
             $table->boolean('is_active')->default(true);
             $table->timestamps();
         });
 
         Schema::create('rekap_partais', function (Blueprint $table) {
             $table->id();
-            $table->enum('jenis', ['dpr_ri', 'dprd_prov', 'dprd_kab']);
+            $table->string('jenis');
             $table->unsignedSmallInteger('nomor_urut');
             $table->string('nama_partai');
             $table->foreignId('dapil_id')->nullable()->constrained('dapils')->nullOnDelete();
@@ -150,7 +151,7 @@ return new class extends Migration
         Schema::create('rekap_headers', function (Blueprint $table) {
             $table->id();
             $table->foreignId('tps_id')->constrained('tps')->cascadeOnDelete();
-            $table->enum('jenis', ['dpr_ri', 'dprd_prov', 'dprd_kab']);
+            $table->string('jenis');
             $table->enum('status', ['draft', 'perlu_dicek', 'final'])->default('draft');
             $table->text('catatan_internal')->nullable();
 

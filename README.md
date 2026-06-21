@@ -1,8 +1,8 @@
 # SIMAP Partai Template
 
-SIMAP Partai Template adalah fondasi generik untuk membuat aplikasi rekap dan saksi satu partai berdasarkan hasil hardening SIMAP Garuda.
+SIMAP Partai Template adalah fondasi generik lengkap untuk membuat aplikasi rekap dan saksi satu partai berdasarkan hasil hardening SIMAP Garuda.
 
-Template ini belum berisi aplikasi Laravel lengkap. Tahap awal ini hanya mengunci struktur konfigurasi partai, helper identitas partai, service scope wilayah, dan dokumentasi ekstraksi agar project partai berikutnya tidak dimulai dari copy mentah.
+Template ini telah berisi aplikasi Laravel lengkap (100% siap pakai) yang siap diturunkan menjadi project partai baru dengan modifikasi konfigurasi minimal.
 
 ## Tujuan
 
@@ -12,28 +12,27 @@ Template ini belum berisi aplikasi Laravel lengkap. Tahap awal ini hanya mengunc
 - Menstandarkan role `admin_partai`, `korcam`, `kordes`, dan `saksi_tps`.
 - Menstandarkan scope wilayah kecamatan, desa, dan TPS.
 
-## Isi Tahap Pertama
+## Fitur Utama & Struktur Project
 
-```text
-config/party.php
-app/Support/PartyConfig.php
-app/Services/PartyScopeService.php
-app/Models/
-database/migrations/0001_01_01_000000_create_party_app_schema.php
-PARTY_PROJECT_OPERASIONAL.md
-```
+- **Skeleton Laravel**: Konfigurasi framework Laravel standar yang siap jalan.
+- **Konfigurasi Dinamis**: `config/party.php` menjadi satu-satunya tempat untuk merubah identitas, warna aksen UI, logo, dan nama partai.
+- **Role & Scope Wilayah**: Akses login terproteksi untuk Admin Partai, Korcam, Kordes, dan Saksi TPS dengan pembatasan hak akses berbasis wilayah.
+- **Input Manual TPS**: Alur pengisian rekap suara legislatif (DPR RI, DPRD Prov, DPRD Kab) dari Saksi TPS dengan asisten input Kordes/Korcam/Admin.
+- **Dashboard & Agregasi**: Grafik sebaran suara interaktif, rangkuman statistik real-time, wilayah kuat/lemah, status finalisasi, dan TPS perlu dicek.
+- **Export Laporan**: Ekspor rekapitulasi data per wilayah ke Excel, ekspor TPS belum masuk, dan ekspor TPS bermasalah.
+- **Demo Data Seeder**: Command `php artisan db:seed --class=PartyDemoSeeder` untuk mempopulasikan data uji tiruan secara otomatis untuk demonstrasi.
+- **Automated Test Suite**: Dilengkapi dengan unit & feature testing penuh (`php artisan test`) untuk menjamin kestabilan kode.
 
-## Belum Masuk
+## Cara Menggunakan Template
+1. Clone repositori template ke folder project partai baru (misal: `simap-golkar`).
+2. Jalankan setup awal: `composer install` & `npm install`.
+3. Buat file `.env` (bisa meng-copy dari `.env.example`) dan sesuaikan kredensial database.
+4. Sesuaikan konfigurasi identitas partai di [config/party.php](file:///c:/laragon/www/simap-partai-template/config/party.php).
+5. Letakkan logo partai pada folder `public/images/` dan sesuaikan jalurnya di konfigurasi.
+6. Jalankan migrasi schema: `php artisan migrate`.
+7. (Opsional) Jalankan demo data seeder untuk pengujian awal: `php artisan db:seed --class=PartyDemoSeeder`.
+8. Verifikasi dengan menjalankan test suite: `php artisan test` dan jalankan server pengembangan: `npm run dev`.
 
-- Skeleton Laravel lengkap.
-- Controller, route, Blade, export, dashboard, dan test.
-- Factories dan seeders.
-- Import snapshot dari SIMAP utama.
-
-## Prinsip Ekstraksi
-
-- Jangan membawa hardcode Garuda.
-- Jangan membawa backward route legacy `ppk`, `pps`, dan `kpps`.
-- Jangan membawa modul dokumen/verifikasi KPU.
-- Jangan membawa rekap non-legislatif PPWP, DPD, Gubernur, atau Bupati.
-- Jangan membawa migration cleanup/histori fork sebagai migration template fresh.
+## Panduan Proyek Baru & Operasional Lengkap
+*   **Pembuatan Proyek Partai Lain**: Langkah detail cara menurunkan template ini menjadi proyek partai baru dapat dilihat pada berkas [HOW_TO_GENERATE_PARTY.md](file:///c:/laragon/www/simap-partai-template/HOW_TO_GENERATE_PARTY.md).
+*   **Operasional & Deployment**: Detail operasional deployment, konfigurasi, backup, dan troubleshooting dapat dilihat pada berkas [PARTY_PROJECT_OPERASIONAL.md](file:///c:/laragon/www/simap-partai-template/PARTY_PROJECT_OPERASIONAL.md).

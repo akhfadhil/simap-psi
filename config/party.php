@@ -1,17 +1,15 @@
 <?php
 
 return [
-    'slug' => env('PARTY_SLUG', 'party-slug'),
+    'slug' => env('PARTY_SLUG', 'partai'),
     'name' => env('PARTY_NAME', 'Nama Partai'),
     'short_name' => env('PARTY_SHORT_NAME', 'Partai'),
-    'app_name' => env('APP_NAME', 'SIMAP Partai'),
-    'tagline' => env('PARTY_TAGLINE', 'Sistem Rekap dan Saksi Partai'),
-    'active_year' => (int) env('PARTY_ACTIVE_YEAR', 2026),
-    'copyright_year' => (int) env('PARTY_COPYRIGHT_YEAR', 2026),
+    'app_name' => env('PARTY_APP_NAME', env('APP_NAME', 'SIMAP Partai')),
+    'tagline' => env('PARTY_TAGLINE', 'Sistem Rekap dan Saksi'),
+    'active_year' => (int) env('PARTY_ACTIVE_YEAR', date('Y')),
+    'copyright_year' => (int) env('PARTY_COPYRIGHT_YEAR', date('Y')),
 
-    'historical_numbers' => [
-        2024 => (int) env('PARTY_NUMBER_2024', 0),
-    ],
+    'historical_numbers' => env('PARTY_HISTORICAL_NUMBERS') ? json_decode(env('PARTY_HISTORICAL_NUMBERS'), true) : [2024 => 11],
 
     'election_types' => [
         'dpr_ri',
@@ -20,16 +18,16 @@ return [
     ],
 
     'assets' => [
-        'logo' => env('PARTY_LOGO_PATH', 'images/party-logo.png'),
+        'logo' => env('PARTY_LOGO', 'images/party-logo.png'),
     ],
 
     'colors' => [
-        'primary' => env('PARTY_COLOR_PRIMARY', '#1D4ED8'),
-        'primary_dark' => env('PARTY_COLOR_PRIMARY_DARK', '#1E40AF'),
-        'primary_soft' => env('PARTY_COLOR_PRIMARY_SOFT', 'rgba(29, 78, 216, .1)'),
-        'korcam' => env('PARTY_COLOR_KORCAM', '#F59E0B'),
-        'kordes' => env('PARTY_COLOR_KORDES', '#14B8A6'),
-        'saksi_tps' => env('PARTY_COLOR_SAKSI_TPS', '#38BDF8'),
+        'primary' => env('PARTY_COLOR_PRIMARY', '#3B82F6'),
+        'primary_dark' => env('PARTY_COLOR_PRIMARY_DARK', '#1D4ED8'),
+        'primary_soft' => env('PARTY_COLOR_PRIMARY_SOFT', 'rgba(59, 130, 246, .1)'),
+        'korcam' => '#F4A261',
+        'kordes' => '#2EC4B6',
+        'saksi_tps' => '#7DD3FC',
     ],
 
     'roles' => [

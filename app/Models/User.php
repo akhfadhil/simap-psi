@@ -17,6 +17,7 @@ class User extends Authenticatable
         'username',
         'role',
         'password',
+        'phone',
         'kecamatan_id',
         'desa_id',
         'tps_id',

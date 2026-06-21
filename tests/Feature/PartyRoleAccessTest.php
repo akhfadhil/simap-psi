@@ -1,0 +1,1008 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Desa;
+use App\Models\Kecamatan;
+use App\Models\PemiluSetting;
+use App\Models\RekapCaleg;
+use App\Models\RekapCalegSuara;
+use App\Models\RekapHeader;
+use App\Models\RekapPartai;
+use App\Models\RekapPartaiSuara;
+use App\Models\Tps;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
+use Tests\TestCase;
+
+class PartyRoleAccessTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private Kecamatan $kecamatanA;
+
+    private Kecamatan $kecamatanB;
+
+    private Desa $desaA;
+
+    private Desa $desaB;
+
+    private Tps $tpsA;
+
+    private Tps $tpsB;
+
+    private User $admin;
+
+    private User $korcamA;
+
+    private User $kordesA;
+
+    private User $saksiA;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->kecamatanA = Kecamatan::create(['nama' => 'Kecamatan A']);
+        $this->kecamatanB = Kecamatan::create(['nama' => 'Kecamatan B']);
+        $this->desaA = Desa::create(['nama' => 'Desa A', 'kecamatan_id' => $this->kecamatanA->id]);
+        $this->desaB = Desa::create(['nama' => 'Desa B', 'kecamatan_id' => $this->kecamatanB->id]);
+        $this->tpsA = Tps::create(['nama' => 'TPS A', 'desa_id' => $this->desaA->id]);
+        $this->tpsB = Tps::create(['nama' => 'TPS B', 'desa_id' => $this->desaB->id]);
+        PemiluSetting::create(['jenis' => 'dpr_ri', 'is_active' => true]);
+
+        $this->admin = $this->user('admin_partai');
+        $this->korcamA = $this->user('korcam', ['kecamatan_id' => $this->kecamatanA->id]);
+        $this->kordesA = $this->user('kordes', ['desa_id' => $this->desaA->id]);
+        $this->saksiA = $this->user('saksi_tps', ['tps_id' => $this->tpsA->id]);
+    }
+
+    public function test_admin_can_enter_all_party_view_levels(): void
+    {
+        $this->actingAs($this->admin)
+            ->get(route('admin.kecamatan.view', $this->kecamatanB))
+            ->assertRedirect(route('dashboard.korcam'));
+
+        $this->actingAs($this->admin)
+            ->get(route('admin.desa.view', $this->desaB))
+            ->assertRedirect(route('dashboard.kordes'));
+
+        $this->actingAs($this->admin)
+            ->get(route('admin.tps.view', $this->tpsB))
+            ->assertRedirect(route('dashboard.saksi'));
+    }
+
+    public function test_korcam_can_only_open_kordes_inside_own_kecamatan(): void
+    {
+        $this->actingAs($this->korcamA)
+            ->get(route('korcam.view-kordes', $this->desaA))
+            ->assertRedirect(route('dashboard.kordes'));
+
+        $this->actingAs($this->korcamA)
+            ->get(route('korcam.view-kordes', $this->desaB))
+            ->assertForbidden();
+    }
+
+    public function test_kordes_can_only_open_saksi_tps_inside_own_desa(): void
+    {
+        $this->actingAs($this->kordesA)
+            ->get(route('kordes.view-tps', $this->tpsA))
+            ->assertRedirect(route('dashboard.saksi'));
+
+        $this->actingAs($this->kordesA)
+            ->get(route('kordes.view-tps', $this->tpsB))
+            ->assertForbidden();
+    }
+
+    public function test_legacy_kpu_roles_cannot_login_to_party(): void
+    {
+        $komisioner = $this->user('komisioner', [
+            'username' => 'komisioner',
+            'password' => Hash::make('secret123'),
+        ]);
+
+        $this->post(route('login.post'), [
+            'username' => $komisioner->username,
+            'password' => 'secret123',
+        ])->assertSessionHasErrors('username');
+
+        $this->assertGuest();
+    }
+
+    public function test_removed_kpu_document_routes_are_not_registered(): void
+    {
+        $this->assertFalse(\Route::has('dokumen.admin'));
+        $this->assertFalse(\Route::has('dokumen.upload'));
+        $this->assertFalse(\Route::has('admin.rekap.unlock'));
+        $this->assertFalse(\Route::has('admin.rekap.inline-update'));
+        $this->assertFalse(view()->exists('welcome'));
+    }
+
+    public function test_non_party_rekap_types_are_not_accessible(): void
+    {
+        $this->actingAs($this->saksiA)
+            ->get(route('rekap.form', 'ppwp'))
+            ->assertNotFound();
+
+        $this->actingAs($this->admin)
+            ->get(route('admin.rekap.show', 'ppwp'))
+            ->assertNotFound();
+
+        $this->actingAs($this->admin)
+            ->get(route('admin.rekap.export', 'ppwp'))
+            ->assertNotFound();
+
+        $this->actingAs($this->admin)
+            ->getJson(route('admin.rekap.chart.data', ['jenis' => 'ppwp']))
+            ->assertNotFound();
+
+        $this->actingAs($this->admin)
+            ->get(route('admin.rekap.export.download', ['jenis' => 'ppwp', 'level' => 'kabupaten']))
+            ->assertSessionHasErrors('jenis');
+
+        foreach ([
+            'admin.setup.ppwp.store',
+            'admin.setup.ppwp.destroy',
+            'admin.setup.dpd.store',
+            'admin.setup.dpd.destroy',
+            'admin.setup.gubernur.store',
+            'admin.setup.gubernur.destroy',
+            'admin.setup.bupati.store',
+            'admin.setup.bupati.destroy',
+        ] as $routeName) {
+            $this->assertFalse(\Route::has($routeName));
+        }
+
+        $this->actingAs($this->admin)
+            ->get(route('admin.setup.index'))
+            ->assertOk()
+            ->assertDontSee('PPWP')
+            ->assertDontSee('Calon DPD')
+            ->assertDontSee('Gubernur')
+            ->assertDontSee('Bupati');
+    }
+
+    public function test_admin_can_only_create_configured_party_master(): void
+    {
+        $this->actingAs($this->admin)
+            ->from(route('admin.setup.index'))
+            ->post(route('admin.setup.partai.store'), [
+                'jenis' => 'dpr_ri',
+                'partais' => [
+                    ['nomor_urut' => 1, 'nama_partai' => 'Partai Kompetitor'],
+                ],
+            ])
+            ->assertRedirect(route('admin.setup.index'))
+            ->assertSessionHasErrors('partais');
+
+        $this->assertDatabaseMissing('rekap_partais', [
+            'jenis' => 'dpr_ri',
+            'nomor_urut' => 1,
+            'nama_partai' => 'Partai Kompetitor',
+        ]);
+
+        $this->actingAs($this->admin)
+            ->post(route('admin.setup.partai.store'), [
+                'jenis' => 'dpr_ri',
+                'partais' => [
+                    ['nomor_urut' => $this->configuredPartyNumber(), 'nama_partai' => $this->configuredPartyName()],
+                ],
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('rekap_partais', [
+            'jenis' => 'dpr_ri',
+            'nomor_urut' => $this->configuredPartyNumber(),
+            'nama_partai' => $this->configuredPartyName(),
+        ]);
+    }
+
+    public function test_admin_can_create_configured_party_caleg_without_manual_party_input(): void
+    {
+        $this->actingAs($this->admin)
+            ->from(route('admin.setup.index'))
+            ->post(route('admin.setup.caleg.configured.store'), [
+                'jenis' => 'dpr_ri',
+                'nomor_urut' => 1,
+                'nama_caleg' => 'Caleg Utama',
+            ])
+            ->assertRedirect(route('admin.setup.index'))
+            ->assertSessionHasNoErrors();
+
+        $party = RekapPartai::where('jenis', 'dpr_ri')
+            ->where('nomor_urut', $this->configuredPartyNumber())
+            ->first();
+
+        $this->assertNotNull($party);
+        $this->assertDatabaseHas('rekap_calegs', [
+            'partai_id' => $party->id,
+            'nomor_urut' => 1,
+            'nama_caleg' => 'Caleg Utama',
+        ]);
+    }
+
+    public function test_admin_can_create_configured_party_caleg_with_ajax(): void
+    {
+        $this->actingAs($this->admin)
+            ->postJson(route('admin.setup.caleg.configured.store'), [
+                'jenis' => 'dpr_ri',
+                'nomor_urut' => 2,
+                'nama_caleg' => 'Caleg Ajax',
+            ])
+            ->assertOk()
+            ->assertJsonPath('caleg.nama_caleg', 'Caleg Ajax');
+
+        $this->assertDatabaseHas('rekap_calegs', [
+            'nomor_urut' => 2,
+            'nama_caleg' => 'Caleg Ajax',
+        ]);
+    }
+
+    public function test_admin_cannot_add_caleg_to_non_configured_party(): void
+    {
+        $competitor = RekapPartai::create([
+            'jenis' => 'dpr_ri',
+            'nomor_urut' => 1,
+            'nama_partai' => 'Partai Kompetitor',
+        ]);
+
+        $this->actingAs($this->admin)
+            ->post(route('admin.setup.caleg.store', $competitor), [
+                'nomor_urut' => 1,
+                'nama_caleg' => 'Caleg Kompetitor',
+            ])
+            ->assertForbidden();
+
+        $this->assertDatabaseMissing('rekap_calegs', [
+            'partai_id' => $competitor->id,
+            'nama_caleg' => 'Caleg Kompetitor',
+        ]);
+    }
+
+    public function test_rekap_form_and_store_only_use_configured_party(): void
+    {
+        $party = RekapPartai::create([
+            'jenis' => 'dpr_ri',
+            'nomor_urut' => $this->configuredPartyNumber(),
+            'nama_partai' => $this->configuredPartyName(),
+        ]);
+        $competitor = RekapPartai::create([
+            'jenis' => 'dpr_ri',
+            'nomor_urut' => 1,
+            'nama_partai' => 'Partai Kompetitor',
+        ]);
+
+        $response = $this->actingAs($this->saksiA)->get(route('rekap.form', 'dpr_ri'));
+
+        $response->assertOk();
+        $response->assertSee($this->configuredPartyName());
+        $response->assertDontSee('Partai Kompetitor');
+        $response->assertDontSee('Data Pemilih');
+        $response->assertDontSee('Surat suara');
+        $response->assertDontSee('Disabilitas');
+        $response->assertDontSee('Suara Tidak Sah');
+
+        $this->actingAs($this->saksiA)
+            ->post(route('rekap.store', 'dpr_ri'), [
+                'suara_partai' => [
+                    $competitor->id => 99,
+                ],
+            ])
+            ->assertForbidden();
+
+        $this->actingAs($this->saksiA)
+            ->post(route('rekap.store', 'dpr_ri'), [
+                'suara_partai' => [
+                    $party->id => 99,
+                ],
+            ])
+            ->assertRedirect(route('rekap.index'));
+
+        $this->assertDatabaseHas('rekap_partai_suaras', [
+            'partai_id' => $party->id,
+            'suara' => 99,
+        ]);
+        $this->assertDatabaseHas('rekap_headers', [
+            'tps_id' => $this->tpsA->id,
+            'jenis' => 'dpr_ri',
+            'dpt_lk' => 0,
+            'dpt_pr' => 0,
+            'suara_tidak_sah' => 0,
+        ]);
+        $this->assertDatabaseMissing('rekap_partai_suaras', [
+            'partai_id' => $competitor->id,
+        ]);
+    }
+
+    public function test_party_rekap_sheet_export_omits_legacy_kpu_fields(): void
+    {
+        [$master, $rekaps] = $this->createConfiguredPartyRekapForExport();
+
+        $export = new \App\Exports\RekapSheetExport(
+            'dpr_ri',
+            'DPR RI',
+            $rekaps,
+            $master,
+            collect([$this->tpsA, $this->tpsB]),
+            'kordes',
+            'Desa A'
+        );
+
+        $content = $this->flattenExportRows($export->array());
+
+        $this->assertStringContainsString($this->configuredPartyName(), $content);
+        $this->assertStringContainsString($this->configuredCandidateName(), $content);
+        $this->assertStringContainsString('Total Suara '.config('party.short_name'), $content);
+        $this->assertStringContainsString('Status', $content);
+        $this->assertStringContainsString('Final', $content);
+        $this->assertStringContainsString('Kosong', $content);
+        $this->assertStringNotContainsString('DPT', $content);
+        $this->assertStringNotContainsString('Pengguna Hak Pilih', $content);
+        $this->assertStringNotContainsString('Surat Suara', $content);
+        $this->assertStringNotContainsString('Disabilitas', $content);
+        $this->assertStringNotContainsString('Tidak Sah', $content);
+    }
+
+    public function test_party_total_export_omits_legacy_kpu_fields(): void
+    {
+        [$master, $rekaps] = $this->createConfiguredPartyRekapForExport();
+
+        $export = new \App\Exports\RekapTotalSheetExport(
+            'dpr_ri',
+            'Rekap_DPR RI',
+            $rekaps,
+            $master['dpr_ri'],
+            collect([$this->desaA, $this->desaB]),
+            'korcam',
+            'Kecamatan A'
+        );
+
+        $content = $this->flattenExportRows($export->array());
+
+        $this->assertStringContainsString($this->configuredPartyName(), $content);
+        $this->assertStringContainsString($this->configuredCandidateName(), $content);
+        $this->assertStringContainsString('Total Suara '.config('party.short_name'), $content);
+        $this->assertStringContainsString('1/1 final, 1 masuk', $content);
+        $this->assertStringNotContainsString('DPT', $content);
+        $this->assertStringNotContainsString('Pengguna Hak Pilih', $content);
+        $this->assertStringNotContainsString('Surat Suara', $content);
+        $this->assertStringNotContainsString('Disabilitas', $content);
+        $this->assertStringNotContainsString('Tidak Sah', $content);
+    }
+
+    public function test_admin_chart_defaults_to_party_total_and_calegs(): void
+    {
+        $party = RekapPartai::create([
+            'jenis' => 'dpr_ri',
+            'nomor_urut' => $this->configuredPartyNumber(),
+            'nama_partai' => $this->configuredPartyName(),
+        ]);
+        $competitor = RekapPartai::create([
+            'jenis' => 'dpr_ri',
+            'nomor_urut' => 1,
+            'nama_partai' => 'Partai Kompetitor',
+        ]);
+        $partyCaleg = RekapCaleg::create([
+            'partai_id' => $party->id,
+            'nomor_urut' => 1,
+            'nama_caleg' => $this->configuredCandidateName(),
+        ]);
+        $competitorCaleg = RekapCaleg::create([
+            'partai_id' => $competitor->id,
+            'nomor_urut' => 1,
+            'nama_caleg' => 'Caleg Kompetitor',
+        ]);
+        $rekap = RekapHeader::create([
+            'tps_id' => $this->tpsA->id,
+            'jenis' => 'dpr_ri',
+            'status' => 'final',
+            'diinput_oleh' => $this->saksiA->id,
+        ]);
+        RekapPartaiSuara::create([
+            'rekap_id' => $rekap->id,
+            'partai_id' => $party->id,
+            'suara' => 20,
+        ]);
+        RekapPartaiSuara::create([
+            'rekap_id' => $rekap->id,
+            'partai_id' => $competitor->id,
+            'suara' => 200,
+        ]);
+        RekapCalegSuara::create([
+            'rekap_id' => $rekap->id,
+            'caleg_id' => $partyCaleg->id,
+            'suara' => 30,
+        ]);
+        RekapCalegSuara::create([
+            'rekap_id' => $rekap->id,
+            'caleg_id' => $competitorCaleg->id,
+            'suara' => 300,
+        ]);
+
+        $response = $this->actingAs($this->admin)
+            ->getJson(route('admin.rekap.chart.data', [
+                'jenis' => 'dpr_ri',
+                'level' => 'kabupaten',
+            ]));
+
+        $response->assertOk()
+            ->assertJsonPath('labels.0', 'Total Suara '.config('party.short_name'))
+            ->assertJsonPath('data.0.suara.0', 50)
+            ->assertJsonMissing(['label' => 'Caleg Kompetitor'])
+            ->assertJsonMissing(['meta' => 'Partai Kompetitor']);
+
+        $payload = $response->json();
+        $this->assertSame(['Total Suara '.config('party.short_name')], $payload['labels']);
+        $this->assertSame($this->configuredCandidateName(), $payload['candidate_rank'][0]['label']);
+        $this->assertSame(30, $payload['candidate_rank'][0]['suara']);
+    }
+
+    public function test_admin_chart_page_can_render(): void
+    {
+        $this->actingAs($this->admin)
+            ->get(route('admin.rekap.chart'))
+            ->assertOk()
+            ->assertSee('Grafik & Statistik');
+    }
+
+    public function test_admin_can_mark_rekap_as_perlu_dicek_with_internal_note(): void
+    {
+        $party = RekapPartai::create([
+            'jenis' => 'dpr_ri',
+            'nomor_urut' => $this->configuredPartyNumber(),
+            'nama_partai' => $this->configuredPartyName(),
+        ]);
+
+        $this->actingAs($this->admin)
+            ->withSession([
+                'admin_view_tps_id' => $this->tpsA->id,
+                'admin_rekap_return_url' => route('admin.rekap.show', 'dpr_ri'),
+            ])
+            ->post(route('rekap.store', 'dpr_ri'), [
+                'suara_partai' => [
+                    $party->id => 77,
+                ],
+                'status_internal' => 'perlu_dicek',
+                'catatan_internal' => 'Foto C1 perlu dicocokkan ulang.',
+            ])
+            ->assertRedirect(route('admin.rekap.show', 'dpr_ri'));
+
+        $this->assertDatabaseHas('rekap_headers', [
+            'tps_id' => $this->tpsA->id,
+            'jenis' => 'dpr_ri',
+            'status' => 'perlu_dicek',
+            'catatan_internal' => 'Foto C1 perlu dicocokkan ulang.',
+        ]);
+    }
+
+    public function test_admin_can_mark_tps_perlu_dicek_from_admin_rekap_detail(): void
+    {
+        $this->actingAs($this->admin)
+            ->from(route('admin.rekap.show', [
+                'jenis' => 'dpr_ri',
+                'detail' => 1,
+                'detail_kecamatan_id' => $this->kecamatanA->id,
+                'detail_desa_id' => $this->desaA->id,
+            ]))
+            ->post(route('admin.rekap.review-status', ['jenis' => 'dpr_ri', 'tps' => $this->tpsA]), [
+                'status_internal' => 'perlu_dicek',
+                'catatan_internal' => 'Input TPS perlu dicocokkan ulang.',
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('rekap_headers', [
+            'tps_id' => $this->tpsA->id,
+            'jenis' => 'dpr_ri',
+            'status' => 'perlu_dicek',
+            'catatan_internal' => 'Input TPS perlu dicocokkan ulang.',
+        ]);
+
+        $this->actingAs($this->admin)
+            ->post(route('admin.rekap.review-status', ['jenis' => 'dpr_ri', 'tps' => $this->tpsA]), [
+                'status_internal' => 'draft',
+            ])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('rekap_headers', [
+            'tps_id' => $this->tpsA->id,
+            'jenis' => 'dpr_ri',
+            'status' => 'draft',
+            'catatan_internal' => null,
+        ]);
+
+        RekapHeader::where('tps_id', $this->tpsA->id)
+            ->where('jenis', 'dpr_ri')
+            ->update([
+                'status' => 'final',
+                'difinalisasi_at' => now(),
+            ]);
+
+        $this->actingAs($this->admin)
+            ->postJson(route('admin.rekap.review-status', ['jenis' => 'dpr_ri', 'tps' => $this->tpsA]), [
+                'status_internal' => 'perlu_dicek',
+                'catatan_internal' => 'Final perlu dicek ulang.',
+            ])
+            ->assertOk()
+            ->assertJsonPath('status', 'perlu_dicek');
+
+        $this->actingAs($this->admin)
+            ->postJson(route('admin.rekap.review-status', ['jenis' => 'dpr_ri', 'tps' => $this->tpsA]), [
+                'status_internal' => 'draft',
+            ])
+            ->assertOk()
+            ->assertJsonPath('status', 'final');
+
+        $this->assertDatabaseHas('rekap_headers', [
+            'tps_id' => $this->tpsA->id,
+            'jenis' => 'dpr_ri',
+            'status' => 'final',
+            'catatan_internal' => null,
+        ]);
+    }
+
+    public function test_saksi_cannot_set_internal_review_status(): void
+    {
+        $party = RekapPartai::create([
+            'jenis' => 'dpr_ri',
+            'nomor_urut' => $this->configuredPartyNumber(),
+            'nama_partai' => $this->configuredPartyName(),
+        ]);
+
+        $this->actingAs($this->saksiA)
+            ->from(route('rekap.form', 'dpr_ri'))
+            ->post(route('rekap.store', 'dpr_ri'), [
+                'suara_partai' => [
+                    $party->id => 77,
+                ],
+                'status_internal' => 'perlu_dicek',
+            ])
+            ->assertRedirect(route('rekap.form', 'dpr_ri'))
+            ->assertSessionHasErrors('status_internal');
+
+        $this->assertDatabaseMissing('rekap_headers', [
+            'tps_id' => $this->tpsA->id,
+            'jenis' => 'dpr_ri',
+            'status' => 'perlu_dicek',
+        ]);
+    }
+
+    public function test_kordes_can_input_and_finalize_tps_rekap_inside_own_desa(): void
+    {
+        $party = RekapPartai::create([
+            'jenis' => 'dpr_ri',
+            'nomor_urut' => $this->configuredPartyNumber(),
+            'nama_partai' => $this->configuredPartyName(),
+        ]);
+
+        $this->actingAs($this->kordesA)
+            ->get(route('kordes.view-tps', $this->tpsA))
+            ->assertRedirect(route('dashboard.saksi'));
+
+        $this->actingAs($this->kordesA)
+            ->post(route('rekap.store', 'dpr_ri'), [
+                'suara_partai' => [
+                    $party->id => 88,
+                ],
+                'finalisasi' => '1',
+            ])
+            ->assertRedirect(route('rekap.index'));
+
+        $this->assertDatabaseHas('rekap_headers', [
+            'tps_id' => $this->tpsA->id,
+            'jenis' => 'dpr_ri',
+            'status' => 'final',
+            'diinput_oleh' => $this->kordesA->id,
+        ]);
+        $this->assertDatabaseHas('rekap_partai_suaras', [
+            'partai_id' => $party->id,
+            'suara' => 88,
+        ]);
+    }
+
+    public function test_korcam_can_input_tps_rekap_inside_own_kecamatan(): void
+    {
+        $party = RekapPartai::create([
+            'jenis' => 'dpr_ri',
+            'nomor_urut' => $this->configuredPartyNumber(),
+            'nama_partai' => $this->configuredPartyName(),
+        ]);
+
+        $this->actingAs($this->korcamA)
+            ->get(route('korcam.view-kordes', $this->desaA))
+            ->assertRedirect(route('dashboard.kordes'));
+
+        $this->actingAs($this->korcamA)
+            ->get(route('kordes.view-tps', $this->tpsA))
+            ->assertRedirect(route('dashboard.saksi'));
+
+        $this->actingAs($this->korcamA)
+            ->post(route('rekap.store', 'dpr_ri'), [
+                'suara_partai' => [
+                    $party->id => 99,
+                ],
+            ])
+            ->assertRedirect(route('rekap.index'));
+
+        $this->assertDatabaseHas('rekap_headers', [
+            'tps_id' => $this->tpsA->id,
+            'jenis' => 'dpr_ri',
+            'status' => 'draft',
+            'diinput_oleh' => $this->korcamA->id,
+        ]);
+        $this->assertDatabaseHas('rekap_partai_suaras', [
+            'partai_id' => $party->id,
+            'suara' => 99,
+        ]);
+    }
+
+    public function test_kordes_and_korcam_cannot_input_tps_rekap_outside_scope(): void
+    {
+        $party = RekapPartai::create([
+            'jenis' => 'dpr_ri',
+            'nomor_urut' => $this->configuredPartyNumber(),
+            'nama_partai' => $this->configuredPartyName(),
+        ]);
+
+        $this->actingAs($this->kordesA)
+            ->withSession(['admin_view_tps_id' => $this->tpsB->id])
+            ->post(route('rekap.store', 'dpr_ri'), [
+                'suara_partai' => [
+                    $party->id => 77,
+                ],
+            ])
+            ->assertForbidden();
+
+        $this->actingAs($this->korcamA)
+            ->withSession(['admin_view_tps_id' => $this->tpsB->id])
+            ->post(route('rekap.store', 'dpr_ri'), [
+                'suara_partai' => [
+                    $party->id => 66,
+                ],
+            ])
+            ->assertForbidden();
+
+        $this->assertDatabaseMissing('rekap_headers', [
+            'tps_id' => $this->tpsB->id,
+            'jenis' => 'dpr_ri',
+        ]);
+    }
+
+    public function test_saksi_can_update_own_draft_rekap_without_duplicate_rows(): void
+    {
+        $party = RekapPartai::create([
+            'jenis' => 'dpr_ri',
+            'nomor_urut' => $this->configuredPartyNumber(),
+            'nama_partai' => $this->configuredPartyName(),
+        ]);
+        $rekap = RekapHeader::create([
+            'tps_id' => $this->tpsA->id,
+            'jenis' => 'dpr_ri',
+            'status' => 'draft',
+            'diinput_oleh' => $this->saksiA->id,
+        ]);
+        RekapPartaiSuara::create([
+            'rekap_id' => $rekap->id,
+            'partai_id' => $party->id,
+            'suara' => 10,
+        ]);
+
+        $this->actingAs($this->saksiA)
+            ->post(route('rekap.store', 'dpr_ri'), [
+                'suara_partai' => [
+                    $party->id => 35,
+                ],
+            ])
+            ->assertRedirect(route('rekap.index'));
+
+        $this->assertSame(1, RekapHeader::where('tps_id', $this->tpsA->id)->where('jenis', 'dpr_ri')->count());
+        $this->assertSame(1, RekapPartaiSuara::where('rekap_id', $rekap->id)->where('partai_id', $party->id)->count());
+        $this->assertDatabaseHas('rekap_partai_suaras', [
+            'rekap_id' => $rekap->id,
+            'partai_id' => $party->id,
+            'suara' => 35,
+        ]);
+    }
+
+    public function test_kordes_and_korcam_can_update_existing_draft_rekap_inside_scope(): void
+    {
+        $party = RekapPartai::create([
+            'jenis' => 'dpr_ri',
+            'nomor_urut' => $this->configuredPartyNumber(),
+            'nama_partai' => $this->configuredPartyName(),
+        ]);
+        $rekap = RekapHeader::create([
+            'tps_id' => $this->tpsA->id,
+            'jenis' => 'dpr_ri',
+            'status' => 'draft',
+            'diinput_oleh' => $this->saksiA->id,
+        ]);
+        RekapPartaiSuara::create([
+            'rekap_id' => $rekap->id,
+            'partai_id' => $party->id,
+            'suara' => 10,
+        ]);
+
+        $this->actingAs($this->kordesA)
+            ->withSession(['admin_view_tps_id' => $this->tpsA->id])
+            ->post(route('rekap.store', 'dpr_ri'), [
+                'suara_partai' => [
+                    $party->id => 45,
+                ],
+            ])
+            ->assertRedirect(route('rekap.index'));
+
+        $this->assertDatabaseHas('rekap_partai_suaras', [
+            'rekap_id' => $rekap->id,
+            'partai_id' => $party->id,
+            'suara' => 45,
+        ]);
+
+        $this->actingAs($this->korcamA)
+            ->withSession(['admin_view_tps_id' => $this->tpsA->id])
+            ->post(route('rekap.store', 'dpr_ri'), [
+                'suara_partai' => [
+                    $party->id => 55,
+                ],
+            ])
+            ->assertRedirect(route('rekap.index'));
+
+        $this->assertSame(1, RekapHeader::where('tps_id', $this->tpsA->id)->where('jenis', 'dpr_ri')->count());
+        $this->assertDatabaseHas('rekap_headers', [
+            'id' => $rekap->id,
+            'status' => 'draft',
+            'diinput_oleh' => $this->korcamA->id,
+        ]);
+        $this->assertDatabaseHas('rekap_partai_suaras', [
+            'rekap_id' => $rekap->id,
+            'partai_id' => $party->id,
+            'suara' => 55,
+        ]);
+    }
+
+    public function test_admin_can_update_internal_status_without_erasing_existing_suara(): void
+    {
+        $party = RekapPartai::create([
+            'jenis' => 'dpr_ri',
+            'nomor_urut' => $this->configuredPartyNumber(),
+            'nama_partai' => $this->configuredPartyName(),
+        ]);
+        $rekap = RekapHeader::create([
+            'tps_id' => $this->tpsA->id,
+            'jenis' => 'dpr_ri',
+            'status' => 'draft',
+            'diinput_oleh' => $this->saksiA->id,
+        ]);
+        RekapPartaiSuara::create([
+            'rekap_id' => $rekap->id,
+            'partai_id' => $party->id,
+            'suara' => 25,
+        ]);
+
+        $this->actingAs($this->admin)
+            ->withSession([
+                'admin_view_tps_id' => $this->tpsA->id,
+                'admin_rekap_return_url' => route('admin.rekap.show', 'dpr_ri'),
+            ])
+            ->post(route('rekap.store', 'dpr_ri'), [
+                'status_internal' => 'perlu_dicek',
+                'catatan_internal' => 'Cek ulang angka suara partai.',
+            ])
+            ->assertRedirect(route('admin.rekap.show', 'dpr_ri'));
+
+        $this->assertDatabaseHas('rekap_headers', [
+            'id' => $rekap->id,
+            'status' => 'perlu_dicek',
+            'catatan_internal' => 'Cek ulang angka suara partai.',
+        ]);
+        $this->assertDatabaseHas('rekap_partai_suaras', [
+            'rekap_id' => $rekap->id,
+            'partai_id' => $party->id,
+            'suara' => 25,
+        ]);
+    }
+
+    public function test_final_rekap_cannot_be_changed_by_non_admin_editors(): void
+    {
+        $party = RekapPartai::create([
+            'jenis' => 'dpr_ri',
+            'nomor_urut' => $this->configuredPartyNumber(),
+            'nama_partai' => $this->configuredPartyName(),
+        ]);
+        $rekap = RekapHeader::create([
+            'tps_id' => $this->tpsA->id,
+            'jenis' => 'dpr_ri',
+            'status' => 'final',
+            'diinput_oleh' => $this->saksiA->id,
+            'difinalisasi_at' => now(),
+        ]);
+        RekapPartaiSuara::create([
+            'rekap_id' => $rekap->id,
+            'partai_id' => $party->id,
+            'suara' => 40,
+        ]);
+
+        $this->actingAs($this->saksiA)
+            ->from(route('rekap.form', 'dpr_ri'))
+            ->post(route('rekap.store', 'dpr_ri'), [
+                'suara_partai' => [
+                    $party->id => 90,
+                ],
+            ])
+            ->assertRedirect(route('rekap.form', 'dpr_ri'))
+            ->assertSessionHas('error');
+
+        $this->actingAs($this->kordesA)
+            ->withSession(['admin_view_tps_id' => $this->tpsA->id])
+            ->from(route('rekap.form', 'dpr_ri'))
+            ->post(route('rekap.store', 'dpr_ri'), [
+                'suara_partai' => [
+                    $party->id => 91,
+                ],
+            ])
+            ->assertRedirect(route('rekap.form', 'dpr_ri'))
+            ->assertSessionHas('error');
+
+        $this->assertDatabaseHas('rekap_headers', [
+            'id' => $rekap->id,
+            'status' => 'final',
+        ]);
+        $this->assertDatabaseHas('rekap_partai_suaras', [
+            'rekap_id' => $rekap->id,
+            'partai_id' => $party->id,
+            'suara' => 40,
+        ]);
+    }
+
+    public function test_admin_can_download_missing_and_review_tps_exports(): void
+    {
+        RekapHeader::create([
+            'tps_id' => $this->tpsA->id,
+            'jenis' => 'dpr_ri',
+            'status' => 'perlu_dicek',
+            'catatan_internal' => 'C1 perlu dicocokkan.',
+            'diinput_oleh' => $this->admin->id,
+        ]);
+
+        $this->actingAs($this->admin)
+            ->get(route('admin.rekap.export.missing-tps'))
+            ->assertOk()
+            ->assertDownload('TPS_Belum_Masuk.xlsx');
+
+        $this->actingAs($this->admin)
+            ->get(route('admin.rekap.export.review-tps'))
+            ->assertOk()
+            ->assertDownload('TPS_Perlu_Dicek.xlsx');
+    }
+
+    private function user(string $role, array $extra = []): User
+    {
+        $defaults = [
+            'name' => ucfirst($role),
+            'username' => $role.'_'.str()->random(6),
+            'password' => Hash::make('password'),
+            'role' => $role,
+        ];
+
+        return User::create(array_merge($defaults, $extra));
+    }
+
+    private function configuredPartyNumber(): int
+    {
+        return (int) config('party.historical_numbers.2024');
+    }
+
+    private function configuredPartyName(): string
+    {
+        return config('party.name');
+    }
+
+    private function configuredCandidateName(): string
+    {
+        return 'Caleg '.config('party.short_name');
+    }
+
+    private function createConfiguredPartyRekapForExport(): array
+    {
+        $party = RekapPartai::create([
+            'jenis' => 'dpr_ri',
+            'nomor_urut' => $this->configuredPartyNumber(),
+            'nama_partai' => $this->configuredPartyName(),
+        ]);
+        $caleg = RekapCaleg::create([
+            'partai_id' => $party->id,
+            'nomor_urut' => 1,
+            'nama_caleg' => $this->configuredCandidateName(),
+        ]);
+        $rekap = RekapHeader::create([
+            'tps_id' => $this->tpsA->id,
+            'jenis' => 'dpr_ri',
+            'status' => 'final',
+            'dpt_lk' => 10,
+            'dpt_pr' => 11,
+            'pengguna_dpt_lk' => 8,
+            'pengguna_dpt_pr' => 9,
+            'ss_diterima' => 30,
+            'disabilitas_lk' => 1,
+            'suara_tidak_sah' => 2,
+            'diinput_oleh' => $this->saksiA->id,
+        ]);
+        RekapPartaiSuara::create([
+            'rekap_id' => $rekap->id,
+            'partai_id' => $party->id,
+            'suara' => 20,
+        ]);
+        RekapCalegSuara::create([
+            'rekap_id' => $rekap->id,
+            'caleg_id' => $caleg->id,
+            'suara' => 15,
+        ]);
+
+        return [
+            ['dpr_ri' => ['partais' => RekapPartai::with('calegs')->whereKey($party->id)->get()]],
+            RekapHeader::with(['partaiSuaras', 'calegSuaras'])->whereKey($rekap->id)->get(),
+        ];
+    }
+
+    public function test_admin_can_manage_user_with_phone_field(): void
+    {
+        // 1. Simpan user baru dengan phone
+        $response = $this->actingAs($this->admin)
+            ->post(route('admin.users.store'), [
+                'name' => 'Saksi TPS 01',
+                'username' => 'saksi_tps01',
+                'phone' => '08987654321',
+                'role' => 'saksi_tps',
+                'tps_id' => $this->tpsA->id,
+            ]);
+
+        $response->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('users', [
+            'username' => 'saksi_tps01',
+            'phone' => '08987654321',
+            'role' => 'saksi_tps',
+            'tps_id' => $this->tpsA->id,
+        ]);
+
+        $user = User::where('username', 'saksi_tps01')->firstOrFail();
+
+        // 2. Update user phone
+        $response = $this->actingAs($this->admin)
+            ->put(route('admin.users.update', $user), [
+                'name' => 'Saksi TPS 01 Baru',
+                'username' => 'saksi_tps01',
+                'phone' => '081212121212',
+                'tps_id' => $this->tpsA->id,
+            ]);
+
+        $response->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('users', [
+            'id' => $user->id,
+            'name' => 'Saksi TPS 01 Baru',
+            'phone' => '081212121212',
+        ]);
+    }
+
+    public function test_party_demo_seeder_runs_successfully(): void
+    {
+        $this->seed(\Database\Seeders\PartyDemoSeeder::class);
+
+        $this->assertDatabaseHas('dapils', ['nama' => 'Dapil A']);
+        $this->assertDatabaseHas('dapils', ['nama' => 'Dapil B']);
+        $this->assertDatabaseHas('users', ['username' => 'korcam_banyuwangi']);
+        $this->assertDatabaseHas('users', ['username' => 'kordes_lateng']);
+        $this->assertDatabaseHas('users', ['username' => 'saksi_lateng_tps01']);
+        $this->assertDatabaseHas('rekap_calegs', ['nama_caleg' => 'Caleg DPR RI 1']);
+        $this->assertDatabaseHas('rekap_headers', ['status' => 'final']);
+        $this->assertDatabaseHas('rekap_headers', ['status' => 'draft']);
+        $this->assertDatabaseHas('rekap_headers', ['status' => 'perlu_dicek']);
+    }
+
+    private function flattenExportRows(array $rows): string
+    {
+        return collect($rows)
+            ->flatten()
+            ->filter(fn ($value) => $value !== null && $value !== '')
+            ->implode(' | ');
+    }
+}
