@@ -42,7 +42,6 @@ class ImportPartySnapshot extends Command
         $profile = $data['party_profile'];
         $this->info("Mengimpor data untuk partai: {$profile['nama']} ({$profile['nama_singkat']})...");
 
-        DB::beginTransaction();
         try {
             Schema::disableForeignKeyConstraints();
 
@@ -57,14 +56,16 @@ class ImportPartySnapshot extends Command
             DB::table('kecamatans')->truncate();
             DB::table('dapils')->truncate();
 
+            DB::beginTransaction();
+
             // 1. Dapils
             $dapils = collect($data['dapils'])->map(fn($item) => [
                 'id' => $item['id'],
                 'nama' => $item['nama'],
                 'created_at' => now(),
                 'updated_at' => now(),
-            ])->toArray();
-            DB::table('dapils')->insert($dapils);
+            ]);
+            $dapils->chunk(20)->each(fn($chunk) => DB::table('dapils')->insert($chunk->toArray()));
 
             // 2. Kecamatans
             $kecamatans = collect($data['kecamatans'])->map(fn($item) => [
@@ -73,8 +74,8 @@ class ImportPartySnapshot extends Command
                 'dapil_id' => $item['dapil_id'] ?? null,
                 'created_at' => now(),
                 'updated_at' => now(),
-            ])->toArray();
-            DB::table('kecamatans')->insert($kecamatans);
+            ]);
+            $kecamatans->chunk(20)->each(fn($chunk) => DB::table('kecamatans')->insert($chunk->toArray()));
 
             // 3. Desas
             $desas = collect($data['desas'])->map(fn($item) => [
@@ -83,8 +84,8 @@ class ImportPartySnapshot extends Command
                 'nama' => $item['nama'],
                 'created_at' => now(),
                 'updated_at' => now(),
-            ])->toArray();
-            DB::table('desas')->insert($desas);
+            ]);
+            $desas->chunk(20)->each(fn($chunk) => DB::table('desas')->insert($chunk->toArray()));
 
             // 4. Tps
             $tps = collect($data['tps'])->map(fn($item) => [
@@ -93,8 +94,8 @@ class ImportPartySnapshot extends Command
                 'nama' => $item['nama'],
                 'created_at' => now(),
                 'updated_at' => now(),
-            ])->toArray();
-            DB::table('tps')->insert($tps);
+            ]);
+            $tps->chunk(20)->each(fn($chunk) => DB::table('tps')->insert($chunk->toArray()));
 
             // 5. Rekap Partais
             $rekapPartais = collect($data['rekap_partais'])->map(fn($item) => [
@@ -105,8 +106,8 @@ class ImportPartySnapshot extends Command
                 'dapil_id' => $item['dapil_id'] ?? null,
                 'created_at' => now(),
                 'updated_at' => now(),
-            ])->toArray();
-            DB::table('rekap_partais')->insert($rekapPartais);
+            ]);
+            $rekapPartais->chunk(20)->each(fn($chunk) => DB::table('rekap_partais')->insert($chunk->toArray()));
 
             // 6. Rekap Calegs
             $rekapCalegs = collect($data['rekap_calegs'])->map(fn($item) => [
@@ -116,8 +117,8 @@ class ImportPartySnapshot extends Command
                 'nama_caleg' => $item['nama_caleg'],
                 'created_at' => now(),
                 'updated_at' => now(),
-            ])->toArray();
-            DB::table('rekap_calegs')->insert($rekapCalegs);
+            ]);
+            $rekapCalegs->chunk(20)->each(fn($chunk) => DB::table('rekap_calegs')->insert($chunk->toArray()));
 
             // 7. Rekap Headers
             if (isset($data['rekap_headers'])) {
@@ -144,11 +145,11 @@ class ImportPartySnapshot extends Command
                     'suara_sah' => $item['suara_sah'] ?? 0,
                     'suara_tidak_sah' => $item['suara_tidak_sah'] ?? 0,
                     'diinput_oleh' => $item['diinput_oleh'] ?? null,
-                    'difinalisasi_at' => $item['difinalisasi_at'] ?? null,
+                    'difinalisasi_at' => isset($item['difinalisasi_at']) ? \Illuminate\Support\Carbon::parse($item['difinalisasi_at'])->toDateTimeString() : null,
                     'created_at' => now(),
                     'updated_at' => now(),
-                ])->toArray();
-                DB::table('rekap_headers')->insert($rekapHeaders);
+                ]);
+                $rekapHeaders->chunk(20)->each(fn($chunk) => DB::table('rekap_headers')->insert($chunk->toArray()));
             }
 
             // 8. Rekap Partai Suaras
@@ -160,8 +161,8 @@ class ImportPartySnapshot extends Command
                     'suara' => $item['suara'] ?? 0,
                     'created_at' => now(),
                     'updated_at' => now(),
-                ])->toArray();
-                DB::table('rekap_partai_suaras')->insert($partaiSuaras);
+                ]);
+                $partaiSuaras->chunk(20)->each(fn($chunk) => DB::table('rekap_partai_suaras')->insert($chunk->toArray()));
             }
 
             // 9. Rekap Caleg Suaras
@@ -173,14 +174,19 @@ class ImportPartySnapshot extends Command
                     'suara' => $item['suara'] ?? 0,
                     'created_at' => now(),
                     'updated_at' => now(),
-                ])->toArray();
-                DB::table('rekap_caleg_suaras')->insert($calegSuaras);
+                ]);
+                $calegSuaras->chunk(20)->each(fn($chunk) => DB::table('rekap_caleg_suaras')->insert($chunk->toArray()));
             }
 
             Schema::enableForeignKeyConstraints();
             DB::commit();
         } catch (\Exception $e) {
-            DB::rollBack();
+            $this->error("Original Exception: " . $e->getMessage() . "\n" . $e->getTraceAsString());
+            try {
+                DB::rollBack();
+            } catch (\Exception $rollbackEx) {
+                // Ignore rollback exception
+            }
             Schema::enableForeignKeyConstraints();
             $this->error("Terjadi kesalahan saat mengimpor data: " . $e->getMessage());
             return 1;
@@ -207,8 +213,8 @@ class ImportPartySnapshot extends Command
             'PARTY_SLUG' => $profile['slug'],
             'PARTY_NAME' => '"' . $profile['nama'] . '"',
             'PARTY_SHORT_NAME' => $profile['nama_singkat'],
-            'PARTY_COLOR_PRIMARY' => $profile['warna_utama'] ?? '#3B82F6',
-            'PARTY_COLOR_PRIMARY_DARK' => $profile['warna_aksen'] ?? '#1D4ED8',
+            'PARTY_COLOR_PRIMARY' => '"' . ($profile['warna_utama'] ?? '#3B82F6') . '"',
+            'PARTY_COLOR_PRIMARY_DARK' => '"' . ($profile['warna_aksen'] ?? '#1D4ED8') . '"',
             'PARTY_LOGO' => $profile['logo_path'] ?? 'images/party-logo.png',
         ];
 

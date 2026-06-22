@@ -74,36 +74,43 @@ class ImportPartySnapshotTest extends TestCase
         $tempFile = tempnam(sys_get_temp_dir(), 'snapshot');
         file_put_contents($tempFile, json_encode($snapshot));
 
-        // Create a fake .env file if it doesn't exist to test env updates
+        // Backup original .env content
         $originalEnvPath = base_path('.env');
+        $originalEnvContent = null;
         $envMocked = false;
-        if (!file_exists($originalEnvPath)) {
+        if (file_exists($originalEnvPath)) {
+            $originalEnvContent = file_get_contents($originalEnvPath);
+        } else {
             file_put_contents($originalEnvPath, "PARTY_SLUG=\nPARTY_NAME=\n");
             $envMocked = true;
         }
 
-        // Run command
-        $this->artisan('import:party-snapshot', ['file' => $tempFile])
-            ->assertSuccessful()
-            ->expectsOutput("Membaca dan memproses file snapshot...")
-            ->expectsOutput("Mengimpor data untuk partai: Partai Demokrasi Indonesia Perjuangan (PDIP)...")
-            ->expectsOutput("✓ Impor snapshot selesai untuk PDIP!");
+        try {
+            // Run command
+            $this->artisan('import:party-snapshot', ['file' => $tempFile])
+                ->assertSuccessful()
+                ->expectsOutput("Membaca dan memproses file snapshot...")
+                ->expectsOutput("Mengimpor data untuk partai: Partai Demokrasi Indonesia Perjuangan (PDIP)...")
+                ->expectsOutput("✓ Impor snapshot selesai untuk PDIP!");
 
-        // Assert database records
-        $this->assertDatabaseHas('dapils', ['id' => 1, 'nama' => 'Dapil 1']);
-        $this->assertDatabaseHas('kecamatans', ['id' => 1, 'nama' => 'Kecamatan A']);
-        $this->assertDatabaseHas('desas', ['id' => 1, 'nama' => 'Desa B']);
-        $this->assertDatabaseHas('tps', ['id' => 1, 'nama' => 'TPS 01']);
-        $this->assertDatabaseHas('rekap_partais', ['id' => 1, 'nama_partai' => 'PDIP']);
-        $this->assertDatabaseHas('rekap_calegs', ['id' => 1, 'nama_caleg' => 'Megawati']);
-        $this->assertDatabaseHas('rekap_headers', ['id' => 1, 'jenis' => 'dpr_ri', 'status' => 'final']);
-        $this->assertDatabaseHas('rekap_partai_suaras', ['rekap_id' => 1, 'partai_id' => 1, 'suara' => 150]);
-        $this->assertDatabaseHas('rekap_caleg_suaras', ['rekap_id' => 1, 'caleg_id' => 1, 'suara' => 80]);
-
-        // Clean up
-        @unlink($tempFile);
-        if ($envMocked) {
-            @unlink($originalEnvPath);
+            // Assert database records
+            $this->assertDatabaseHas('dapils', ['id' => 1, 'nama' => 'Dapil 1']);
+            $this->assertDatabaseHas('kecamatans', ['id' => 1, 'nama' => 'Kecamatan A']);
+            $this->assertDatabaseHas('desas', ['id' => 1, 'nama' => 'Desa B']);
+            $this->assertDatabaseHas('tps', ['id' => 1, 'nama' => 'TPS 01']);
+            $this->assertDatabaseHas('rekap_partais', ['id' => 1, 'nama_partai' => 'PDIP']);
+            $this->assertDatabaseHas('rekap_calegs', ['id' => 1, 'nama_caleg' => 'Megawati']);
+            $this->assertDatabaseHas('rekap_headers', ['id' => 1, 'jenis' => 'dpr_ri', 'status' => 'final']);
+            $this->assertDatabaseHas('rekap_partai_suaras', ['rekap_id' => 1, 'partai_id' => 1, 'suara' => 150]);
+            $this->assertDatabaseHas('rekap_caleg_suaras', ['rekap_id' => 1, 'caleg_id' => 1, 'suara' => 80]);
+        } finally {
+            // Clean up
+            @unlink($tempFile);
+            if ($originalEnvContent !== null) {
+                file_put_contents($originalEnvPath, $originalEnvContent);
+            } else {
+                @unlink($originalEnvPath);
+            }
         }
     }
 }
