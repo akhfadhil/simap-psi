@@ -36,4 +36,6 @@ return [
         'kordes' => 'Kordes',
         'saksi_tps' => 'Saksi TPS',
     ],
+
+    'main_simap_url' => env('MAIN_SIMAP_URL', 'http://simap.test'),
 ];
