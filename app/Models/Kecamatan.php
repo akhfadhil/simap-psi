@@ -24,4 +24,9 @@ class Kecamatan extends Model
     {
         return $this->belongsTo(Dapil::class);
     }
+
+    public function pendukungs(): HasMany
+    {
+        return $this->hasMany(Pendukung::class);
+    }
 }

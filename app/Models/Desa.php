@@ -24,4 +24,9 @@ class Desa extends Model
     {
         return $this->hasMany(User::class);
     }
+
+    public function pendukungs(): HasMany
+    {
+        return $this->hasMany(Pendukung::class);
+    }
 }
